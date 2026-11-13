@@ -1,5 +1,5 @@
 export const MIN = 0;
-export const MAX = 9999;
+export const MAX = 1_000_000;
 
 const ONES = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
@@ -15,15 +15,23 @@ function underHundred(n: number): string {
   return o ? `${TENS[t]}-${ONES[o]}` : TENS[t];
 }
 
-export function numberWord(n: number): string {
-  if (n === 0) return 'zero';
-  const parts: string[] = [];
-  const th = Math.floor(n / 1000);
-  const hu = Math.floor(n / 100) % 10;
+function underThousand(n: number): string {
+  const hu = Math.floor(n / 100);
   const rest = n % 100;
-  if (th) parts.push(`${ONES[th]} thousand`);
+  const parts: string[] = [];
   if (hu) parts.push(`${ONES[hu]} hundred`);
   if (rest) parts.push(underHundred(rest));
+  return parts.join(' ');
+}
+
+export function numberWord(n: number): string {
+  if (n === 0) return 'zero';
+  if (n === 1_000_000) return 'one million';
+  const th = Math.floor(n / 1000);
+  const rest = n % 1000;
+  const parts: string[] = [];
+  if (th) parts.push(`${underThousand(th)} thousand`);
+  if (rest) parts.push(underThousand(rest));
   return parts.join(' ');
 }
 
@@ -63,7 +71,20 @@ export function toneFor(amount: number): Tone {
   return TONES[amount];
 }
 
-export type Kind = 'block' | 'flat' | 'cube';
+export type Kind = 'block' | 'flat' | 'cube' | 'rod' | 'slab' | 'mega';
+
+/**
+ * Every piece, in blocks: front width and height, how far it recedes, what one piece is worth,
+ * and the spacing of the lines drawn on it (each piece shows the pieces it is made of).
+ */
+export const DIMS: Record<Kind, { w: number; h: number; d: number; value: number; step: number }> = {
+  block: { w: 1, h: 1, d: 0, value: 1, step: 0 },
+  flat: { w: 10, h: 10, d: 0, value: 100, step: 1 },
+  cube: { w: 10, h: 10, d: 4, value: 1_000, step: 1 },
+  rod: { w: 10, h: 100, d: 4, value: 10_000, step: 10 },
+  slab: { w: 100, h: 100, d: 4, value: 100_000, step: 10 },
+  mega: { w: 100, h: 100, d: 40, value: 1_000_000, step: 10 },
+};
 
 /** One drawn piece. Units are blocks; x from the left edge, y from the ground up. */
 export interface Piece {
@@ -71,7 +92,7 @@ export interface Piece {
   kind: Kind;
   x: number;
   y: number;
-  /** palette key: 1 to 10 for a tower or the ones, 10 to 90 for tens, hundreds and thousands */
+  /** palette key: 1 to 10 for a tower or the ones, 10 to 90 for every bigger place */
   tone: number;
 }
 
@@ -98,19 +119,23 @@ export interface Shape {
   limbs: number;
 }
 
-export const GAP = 0.12; // between columns, so each ten reads as its own stick
-export const GROUP_GAP = 0.7; // between thousands, hundreds, tens and ones
-export const DEPTH = 4; // how far a thousand cube recedes
-export const FLAT = 10; // a hundred is 10 by 10 blocks
-const PER_ROW = 3;
+export const GAP = 0.12; // between block columns, so each ten reads as its own stick
 
 function digitTone(d: number): number {
   return d * 10;
 }
 
+interface Place {
+  kind: Kind;
+  prefix: string;
+  digit: number;
+  perRow: number;
+  faceScale: number;
+}
+
 /**
- * Up to ten: one tower. Past ten the buddy is built the way place value is taught:
- * thousand cubes, then hundred flats, then a column per ten, then the ones.
+ * Up to ten: one tower. Past ten the buddy is built the way place value is taught, and the
+ * pattern repeats every three places: block, column, flat; cube, rod, slab; then one giant cube.
  * Each place uses one color per digit, so 20, 30, 200 and 3000 all look different.
  */
 export function shapeFor(n: number): Shape {
@@ -126,46 +151,53 @@ export function shapeFor(n: number): Shape {
     };
   }
 
-  const th = Math.floor(n / 1000);
-  const hu = Math.floor(n / 100) % 10;
-  const te = Math.floor(n / 10) % 10;
-  const on = n % 10;
+  const digit = (place: number) => Math.floor(n / place) % 10;
+  const te = digit(10);
+  const on = digit(1);
+  const places: Place[] = [
+    { kind: 'mega', prefix: 'm', digit: n >= 1_000_000 ? 1 : 0, perRow: 1, faceScale: 40 },
+    { kind: 'slab', prefix: 's', digit: digit(100_000), perRow: 3, faceScale: 45 },
+    { kind: 'rod', prefix: 'r', digit: digit(10_000), perRow: 9, faceScale: 6 },
+    { kind: 'cube', prefix: 'c', digit: digit(1_000), perRow: 3, faceScale: 6 },
+    { kind: 'flat', prefix: 'f', digit: digit(100), perRow: 3, faceScale: 5 },
+  ];
+
   let x = 0;
+  let width = 0;
   let height = 0;
   let face: Face | null = null;
   let armL = 0;
   let armR = 0;
   let armRx = 0;
   let rightFoot = 0;
-  let width = 0;
 
-  const grid = (count: number, kind: 'flat' | 'cube', prefix: string, digit: number) => {
-    const rows = Math.ceil(count / PER_ROW);
+  for (const p of places) {
+    const count = p.digit;
+    if (!count) continue;
+    const { w, h, d } = DIMS[p.kind];
+    const gap = 0.012 * w;
+    const rows = Math.ceil(count / p.perRow);
     for (let i = 0; i < count; i++) {
-      pieces.push({ key: `${prefix}${i}`, kind, x: x + (i % PER_ROW) * (FLAT + GAP), y: Math.floor(i / PER_ROW) * FLAT, tone: digitTone(digit) });
+      pieces.push({ key: `${p.prefix}${i}`, kind: p.kind, x: x + (i % p.perRow) * (w + gap), y: Math.floor(i / p.perRow) * h, tone: digitTone(count) });
     }
-    const depth = kind === 'cube' ? DEPTH : 0;
-    const cols = Math.min(count, PER_ROW);
-    const w = cols * (FLAT + GAP) - GAP;
-    const topRow = rows - 1;
-    const inTop = count - topRow * PER_ROW;
+    const cols = Math.min(count, p.perRow);
+    const gw = cols * (w + gap) - gap;
+    const inTop = count - (rows - 1) * p.perRow;
     if (!face) {
-      face = { x: x + (inTop * (FLAT + GAP) - GAP) / 2, top: rows * FLAT, scale: kind === 'cube' ? 6 : 5 };
-      armL = Math.min(rows * FLAT, 30) * 0.5;
+      const grow = p.kind === 'rod' ? Math.min(1.9, 1 + 0.22 * (inTop - 1)) : 1;
+      face = { x: x + (inTop * (w + gap) - gap) / 2, top: rows * h, scale: p.faceScale * grow };
+      armL = rows * h * 0.5;
     }
-    height = Math.max(height, rows * FLAT + depth);
-    const lastColRows = Math.ceil((count - (cols - 1)) / PER_ROW);
-    armR = lastColRows * FLAT * 0.5;
-    armRx = x + w + depth * 0.5;
-    rightFoot = x + w - FLAT / 2;
-    width = x + w + depth;
-    x = width + GROUP_GAP;
-  };
+    height = Math.max(height, rows * h + d);
+    const lastColRows = Math.ceil((count - (cols - 1)) / p.perRow);
+    armR = lastColRows * h * 0.5;
+    armRx = x + gw + d * 0.5;
+    rightFoot = x + gw - w / 2;
+    width = x + gw + d;
+    x = width + 0.07 * w;
+  }
 
-  if (th) grid(th, 'cube', 'c', th);
-  if (hu) grid(hu, 'flat', 'f', hu);
-
-  // Tens and ones keep the same keys as before, so blocks glide instead of popping.
+  // Tens and ones keep the same keys at every size, so blocks glide instead of popping.
   for (let c = 0; c < te; c++) {
     for (let r = 0; r < 10; r++) pieces.push({ key: `b${c}-${r}`, kind: 'block', x: x + c * (1 + GAP), y: r, tone: digitTone(te) });
   }
@@ -183,8 +215,7 @@ export function shapeFor(n: number): Shape {
     x = width + GAP;
   }
   if (on) {
-    const col = te; // ones stand in the next block column
-    for (let r = 0; r < on; r++) pieces.push({ key: `b${col}-${r}`, kind: 'block', x, y: r, tone: on });
+    for (let r = 0; r < on; r++) pieces.push({ key: `b${te}-${r}`, kind: 'block', x, y: r, tone: on });
     if (!face) {
       face = { x: x + 0.5, top: on, scale: 1 };
       armL = Math.min(on, 6) * 0.55;
@@ -195,14 +226,14 @@ export function shapeFor(n: number): Shape {
     rightFoot = x + 0.5;
     width = x + 1;
   }
+
   const first = pieces[0];
-  const leftFoot = first.kind === 'block' ? 0.5 : FLAT / 2;
-  const limbs = Math.min(5, Math.max(1, height / 7));
   return {
     pieces, width, height,
     face: face!,
     armL, armR, armRx,
-    feet: [leftFoot, rightFoot], limbs,
+    feet: [first.x + DIMS[first.kind].w / 2, rightFoot],
+    limbs: Math.min(60, Math.max(1, height / 7)),
   };
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "Stack Pals",
   "short_name": "Stack Pals",
-  "description": "Count, build and meet a block buddy for every number from 0 to 9,999.",
+  "description": "Count, build and meet a block buddy for every number from 0 to one million.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

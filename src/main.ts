@@ -66,6 +66,15 @@ function frame(animate: boolean) {
 
 stage.setAttribute('preserveAspectRatio', 'xMidYMax meet');
 
+// The slider is logarithmic, so 1 to 10 gets as much room as 100,000 to 1,000,000.
+const DECADES = Math.log10(MAX);
+function fromSlider(pos: number): number {
+  return pos === 0 ? 0 : clamp(10 ** ((pos / 1000) * DECADES));
+}
+function toSlider(value: number): number {
+  return value === 0 ? 0 : Math.round((Math.log10(value) / DECADES) * 1000);
+}
+
 // ---- number changes ----
 let sayTimer = 0;
 
@@ -74,7 +83,7 @@ function render(animate: boolean) {
   frame(animate);
   numEl.textContent = n.toLocaleString('en-US');
   wordEl.textContent = numberWord(n);
-  slider.value = String(n);
+  slider.value = String(toSlider(n));
   live.textContent = `${n}, ${numberWord(n)}`;
   if (animate) {
     numEl.classList.remove('bump');
@@ -189,7 +198,7 @@ $('surpriseBtn').addEventListener('click', () => {
   window.setTimeout(() => { pal.jump(); say(numberWord(n)); }, 450);
 });
 
-slider.addEventListener('input', () => setN(Number(slider.value), { quiet: true }));
+slider.addEventListener('input', () => setN(fromSlider(Number(slider.value)), { quiet: true }));
 slider.addEventListener('change', () => sfx.pop(true));
 
 stage.addEventListener('pointerdown', (e) => {

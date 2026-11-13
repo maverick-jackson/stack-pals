@@ -5,7 +5,7 @@
   --panel: #3d2a6b;
   --panel-edge: #2b1d50;
   --cream: #fffaf0;
-  --panel-w: min(330px, 46vw);
+  --panel-w: min(360px, 48vw);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -203,6 +203,10 @@ body.panel-open .panel { transform: none; }
 .pill.t10 { background: #ffb703; }
 .pill.t100 { background: #4cc9f0; }
 .pill.t1000 { background: #b388eb; }
+.pill.t10000 { background: #00bba7; }
+.pill.t100000 { background: #f15bb5; }
+.grid.steps { grid-template-columns: 1fr 1fr 1fr; gap: 9px; }
+.grid.steps .pill { min-height: 52px; font-size: 17px; padding: 0 2px; }
 .pill.act { font-size: 22px; }
 .pill.count { background: #7ae582; }
 .pill.count.on { background: #ffe27a; }

@@ -1,4 +1,4 @@
-import { DEPTH, FLAT, Kind, Shape, shapeFor, seeded, toneFor } from './numbers';
+import { DIMS, Kind, Shape, shapeFor, seeded, toneFor } from './numbers';
 
 export const B = 100; // block size in character units
 const INK = '#2b2140';
@@ -41,28 +41,28 @@ export interface Bounds {
   height: number;
 }
 
-const S = FLAT * B; // a hundred flat, and the face of a thousand cube
-const D = DEPTH * B;
+// Big pieces keep crisp outlines at any zoom: their strokes are in screen pixels.
+const CRISP = { 'vector-effect': 'non-scaling-stroke' };
 
-function gridLines(rnd: () => number): string {
-  const w = () => (rnd() - 0.5) * 3;
-  let d = '';
-  for (let i = 1; i < FLAT; i++) {
-    d += `M${i * B + w()} 6 L${i * B + w()} ${S - 6} `;
-    d += `M6 ${i * B + w()} L${S - 6} ${i * B + w()} `;
+/** Lines every `step` blocks across the front, top and side of a w x h x d prism. */
+function prismLines(w: number, h: number, d: number, step: number): { front: string; back: string } {
+  const W = w * B, H = h * B, D = d * B;
+  let front = '';
+  let back = '';
+  if (!step) return { front, back };
+  for (let i = step; i < w; i += step) front += `M${i * B} 0 L${i * B} ${H} `;
+  for (let j = step; j < h; j += step) front += `M0 ${j * B} L${W} ${j * B} `;
+  if (D) {
+    // the depth splits into ten for a cube of blocks or a giant cube of cubes; rods and slabs are one cube deep
+    const parts = (w === 10 && h === 10) || d === 40 ? 10 : 1;
+    for (let i = step; i < w; i += step) back += `M${i * B} 0 L${i * B + D} ${-D} `;
+    for (let j = step; j < h; j += step) back += `M${W} ${j * B} L${W + D} ${j * B - D} `;
+    for (let k = 1; k < parts; k++) {
+      const f = (k / parts) * D;
+      back += `M${f} ${-f} L${W + f} ${-f} M${W + f} ${-f} L${W + f} ${H - f} `;
+    }
   }
-  return d;
-}
-
-function obliqueLines(): { top: string; side: string } {
-  let top = '';
-  let side = '';
-  for (let i = 1; i < FLAT; i++) {
-    const f = i / FLAT;
-    top += `M${i * B} 0 L${i * B + D} ${-D} M${f * D} ${-f * D} L${S + f * D} ${-f * D} `;
-    side += `M${S + f * D} ${-f * D} L${S + f * D} ${S - f * D} M${S} ${i * B} L${S + D} ${i * B - D} `;
-  }
-  return { top, side };
+  return { front, back };
 }
 
 export class Pal {
@@ -134,7 +134,7 @@ export class Pal {
         node.paint(p.tone);
         node.tone = p.tone;
       }
-      const h = p.kind === 'block' ? 1 : FLAT;
+      const h = DIMS[p.kind].h;
       node.g.style.transform = `translate(${ox + p.x * B}px, ${-(p.y + h) * B}px)`;
     }
     for (const [key, node] of this.pieces) {
@@ -159,28 +159,31 @@ export class Pal {
     const fills: SVGElement[] = [];
     const shades: SVGElement[] = [];
 
-    if (kind === 'cube') {
-      const lines = obliqueLines();
-      const top = el('path', { d: `M0 0 L${S} 0 L${S + D} ${-D} L${D} ${-D}Z` }, pop);
-      fills.push(top);
-      el('path', { d: `M0 0 L${S} 0 L${S + D} ${-D} L${D} ${-D}Z`, fill: '#fff', opacity: 0.35 }, pop);
-      shades.push(el('path', { d: `M${S} 0 L${S + D} ${-D} L${S + D} ${S - D} L${S} ${S}Z` }, pop));
-      el('path', { d: lines.top + lines.side, fill: 'none', stroke: INK, 'stroke-width': 4, opacity: 0.35 }, pop);
-      el('path', { d: `M0 0 L${D} ${-D} L${S + D} ${-D} L${S + D} ${S - D} L${S} ${S} M${S} 0 L${S + D} ${-D}`, fill: 'none', stroke: INK, 'stroke-width': 9, 'stroke-linejoin': 'round' }, pop);
-    }
-
-    const size = kind === 'block' ? B : S;
-    const outline = wobblyRect(0, 0, size, size, rnd, kind === 'block' ? 2.5 : 6);
-    fills.push(el('path', { d: outline }, pop));
     if (kind === 'block') {
+      const outline = wobblyRect(0, 0, B, B, rnd);
+      fills.push(el('path', { d: outline }, pop));
       shades.push(el('path', { d: wobblyRect(9, B - 27, B - 18, 17, rnd, 1.5) }, pop));
       el('path', { d: `M16 ${20 + rnd() * 3} Q24 13 ${38 + rnd() * 6} ${14 + rnd() * 2}`, fill: 'none', stroke: '#fff', 'stroke-width': 6, 'stroke-linecap': 'round', opacity: 0.55 }, pop);
       el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 5, 'stroke-linejoin': 'round' }, pop);
     } else {
-      shades.push(el('path', { d: wobblyRect(30, S - 70, S - 60, 44, rnd, 4) }, pop));
-      el('path', { d: gridLines(rnd), fill: 'none', stroke: INK, 'stroke-width': 4, opacity: 0.35, 'stroke-linecap': 'round' }, pop);
-      el('path', { d: `M50 ${90 + rnd() * 10} Q110 40 ${240 + rnd() * 30} ${46 + rnd() * 6}`, fill: 'none', stroke: '#fff', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: 0.5 }, pop);
-      el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 9, 'stroke-linejoin': 'round' }, pop);
+      const { w, h, d, step } = DIMS[kind];
+      const W = w * B, H = h * B, D = d * B;
+      const lines = prismLines(w, h, d, step);
+      if (D) {
+        const top = `M0 0 L${W} 0 L${W + D} ${-D} L${D} ${-D}Z`;
+        fills.push(el('path', { d: top }, pop));
+        el('path', { d: top, fill: '#fff', opacity: 0.35 }, pop);
+        shades.push(el('path', { d: `M${W} 0 L${W + D} ${-D} L${W + D} ${H - D} L${W} ${H}Z` }, pop));
+        el('path', { d: lines.back, fill: 'none', stroke: INK, 'stroke-width': 1, opacity: 0.45, ...CRISP }, pop);
+        el('path', { d: `M0 0 L${D} ${-D} L${W + D} ${-D} L${W + D} ${H - D} L${W} ${H} M${W} 0 L${W + D} ${-D}`, fill: 'none', stroke: INK, 'stroke-width': 2.5, 'stroke-linejoin': 'round', ...CRISP }, pop);
+      }
+      const unit = Math.min(W, H) / 10; // a tenth of the shorter side
+      const outline = wobblyRect(0, 0, W, H, rnd, unit * 0.06);
+      fills.push(el('path', { d: outline }, pop));
+      shades.push(el('path', { d: wobblyRect(unit * 0.3, H - unit * 0.7, W - unit * 0.6, unit * 0.44, rnd, unit * 0.04) }, pop));
+      el('path', { d: lines.front, fill: 'none', stroke: INK, 'stroke-width': 1, opacity: 0.4, ...CRISP }, pop);
+      el('path', { d: `M${unit * 0.5} ${unit * (0.9 + rnd() * 0.1)} Q${unit * 1.1} ${unit * 0.4} ${unit * (2.4 + rnd() * 0.3)} ${unit * 0.46}`, fill: 'none', stroke: '#fff', 'stroke-width': unit * 0.16, 'stroke-linecap': 'round', opacity: 0.5 }, pop);
+      el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 3, 'stroke-linejoin': 'round', ...CRISP }, pop);
     }
 
     // Place before the first frame so a new piece does not fly in from the origin.

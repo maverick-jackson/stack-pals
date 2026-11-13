@@ -8,7 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Stack Pals" />
-    <meta name="description" content="Count, build and meet a block buddy for every number from 0 to 9,999." />
+    <meta name="description" content="Count, build and meet a block buddy for every number from 0 to one million." />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
@@ -82,15 +82,21 @@
       </button>
 
       <aside class="panel" id="panel" aria-label="Menu" inert>
-        <div class="grid">
+        <div class="grid steps">
           <button class="pill t1" data-step="1">+1</button>
-          <button class="pill t1" data-step="-1">&minus;1</button>
           <button class="pill t10" data-step="10">+10</button>
-          <button class="pill t10" data-step="-10">&minus;10</button>
           <button class="pill t100" data-step="100">+100</button>
+          <button class="pill t1" data-step="-1">&minus;1</button>
+          <button class="pill t10" data-step="-10">&minus;10</button>
           <button class="pill t100" data-step="-100">&minus;100</button>
-          <button class="pill t1000" data-step="1000">+1000</button>
-          <button class="pill t1000" data-step="-1000">&minus;1000</button>
+          <button class="pill t1000" data-step="1000">+1,000</button>
+          <button class="pill t10000" data-step="10000">+10,000</button>
+          <button class="pill t100000" data-step="100000">+100,000</button>
+          <button class="pill t1000" data-step="-1000">&minus;1,000</button>
+          <button class="pill t10000" data-step="-10000">&minus;10,000</button>
+          <button class="pill t100000" data-step="-100000">&minus;100,000</button>
+        </div>
+        <div class="grid">
           <button class="pill act count" id="countBtn">Count</button>
           <button class="pill act" id="sayBtn">Say it</button>
           <button class="pill act" id="surpriseBtn">Surprise</button>
@@ -98,7 +104,7 @@
         </div>
         <label class="slider">
           <span>Pick a number</span>
-          <input id="slider" type="range" min="0" max="9999" step="1" value="1" />
+          <input id="slider" type="range" min="0" max="1000" step="1" value="0" aria-label="Pick a number" />
         </label>
         <div class="row">
           <button class="pill small" id="soundBtn" aria-pressed="true">Sound on</button>

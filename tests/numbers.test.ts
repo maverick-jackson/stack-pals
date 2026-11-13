@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { clamp, FLAT, numberWord, Piece, shapeFor, seeded } from '../src/numbers';
+import { clamp, DIMS, numberWord, Piece, shapeFor, seeded } from '../src/numbers';
 import { countSteps } from '../src/count';
 
-const value = (p: Piece) => (p.kind === 'cube' ? 1000 : p.kind === 'flat' ? 100 : 1);
+const value = (p: Piece) => DIMS[p.kind].value;
 
 describe('numberWord', () => {
-  it('names numbers up to 9999', () => {
+  it('names numbers up to one million', () => {
     expect(numberWord(0)).toBe('zero');
     expect(numberWord(7)).toBe('seven');
     expect(numberWord(13)).toBe('thirteen');
@@ -15,21 +15,25 @@ describe('numberWord', () => {
     expect(numberWord(1000)).toBe('one thousand');
     expect(numberWord(2340)).toBe('two thousand three hundred forty');
     expect(numberWord(9999)).toBe('nine thousand nine hundred ninety-nine');
-    for (let i = 0; i <= 9999; i += 37) expect(numberWord(i)).toMatch(/^[a-z -]+$/);
+    expect(numberWord(40_007)).toBe('forty thousand seven');
+    expect(numberWord(999_999)).toBe('nine hundred ninety-nine thousand nine hundred ninety-nine');
+    expect(numberWord(1_000_000)).toBe('one million');
+    for (let i = 0; i <= 1_000_000; i += 3_337) expect(numberWord(i)).toMatch(/^[a-z -]+$/);
   });
 });
 
 describe('clamp', () => {
-  it('keeps numbers in 0..9999', () => {
+  it('keeps numbers in 0..1,000,000', () => {
     expect(clamp(-5)).toBe(0);
-    expect(clamp(12000)).toBe(9999);
+    expect(clamp(2_000_000)).toBe(1_000_000);
     expect(clamp(3.6)).toBe(4);
   });
 });
 
 describe('shapeFor', () => {
   it('adds up to n with unique keys, for every number', () => {
-    for (let n = 0; n <= 9999; n++) {
+    const ns = [...Array.from({ length: 10_000 }, (_, i) => i), ...Array.from({ length: 1000 }, (_, i) => 10_000 + i * 990), 999_999, 1_000_000];
+    for (const n of ns) {
       const s = shapeFor(n);
       expect(s.pieces.reduce((a, p) => a + value(p), 0)).toBe(n);
       expect(new Set(s.pieces.map((p) => p.key)).size).toBe(s.pieces.length);
@@ -37,9 +41,9 @@ describe('shapeFor', () => {
   });
 
   it('never overlaps two pieces', () => {
-    for (const n of [57, 199, 345, 999, 1234, 4567, 9999]) {
+    for (const n of [57, 199, 345, 999, 1234, 4567, 9999, 34_567, 999_999, 1_000_000]) {
       const s = shapeFor(n);
-      const box = (p: Piece) => ({ x0: p.x, y0: p.y, x1: p.x + (p.kind === 'block' ? 1 : FLAT), y1: p.y + (p.kind === 'block' ? 1 : FLAT) });
+      const box = (p: Piece) => ({ x0: p.x, y0: p.y, x1: p.x + DIMS[p.kind].w, y1: p.y + DIMS[p.kind].h });
       for (let i = 0; i < s.pieces.length; i++) {
         for (let j = i + 1; j < s.pieces.length; j++) {
           const a = box(s.pieces[i]);
@@ -78,6 +82,12 @@ describe('shapeFor', () => {
     expect(s.pieces.filter((p) => p.tone === 4).length).toBe(4);
   });
 
+  it('builds the bigger places from rods, slabs and one giant cube', () => {
+    const kinds = (n: number) => shapeFor(n).pieces.reduce<Record<string, number>>((a, p) => ((a[p.kind] = (a[p.kind] ?? 0) + 1), a), {});
+    expect(kinds(234_567)).toEqual({ slab: 2, rod: 3, cube: 4, flat: 5, block: 67 });
+    expect(kinds(1_000_000)).toEqual({ mega: 1 });
+  });
+
   it('keeps tens and ones keys stable below 100 so blocks glide', () => {
     const keys = (n: number) => new Set(shapeFor(n).pieces.map((p) => p.key));
     const a = keys(47);
@@ -97,10 +107,12 @@ describe('countSteps', () => {
     expect(countSteps(43).map((s) => s.word)).toEqual(['ten', 'twenty', 'thirty', 'forty', 'forty-one', 'forty-two', 'forty-three']);
     const big = countSteps(2101).map((s) => s.word);
     expect(big).toEqual(['one thousand', 'two thousand', 'two thousand one hundred', 'two thousand one hundred one']);
+    expect(countSteps(110_000).map((s) => s.word)).toEqual(['one hundred thousand', 'one hundred ten thousand']);
+    expect(countSteps(1_000_000).map((s) => s.word)).toEqual(['one million']);
   });
 
   it('only lights pieces that exist', () => {
-    for (const n of [5, 17, 20, 99, 100, 1234, 9999]) {
+    for (const n of [5, 17, 20, 99, 100, 1234, 9999, 56_789, 999_999, 1_000_000]) {
       const keys = new Set(shapeFor(n).pieces.map((p) => p.key));
       for (const s of countSteps(n)) for (const k of s.keys) expect(keys.has(k)).toBe(true);
     }
