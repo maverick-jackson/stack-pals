@@ -45,9 +45,16 @@ describe('shapeFor', () => {
     expect(s.tens).toBe(3);
     expect(s.cols).toBe(4);
     expect(s.cells.filter((c) => c.col === 3).length).toBe(4);
-    expect(s.cells.filter((c) => c.tone === 10).length).toBe(30);
+    expect(s.cells.filter((c) => c.tone === 30).length).toBe(30);
     expect(s.cells.filter((c) => c.tone === 4).length).toBe(4);
     expect(shapeFor(100).cols).toBe(10);
+  });
+
+  it('gives every decade its own ten color', () => {
+    const tenTone = (n: number) => shapeFor(n).cells[0].tone;
+    expect([10, 20, 30, 40, 50, 60, 70, 80, 90].map(tenTone)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90]);
+    expect(tenTone(25)).toBe(20);
+    expect(new Set(shapeFor(100).cells.map((c) => c.tone)).size).toBe(10);
     expect(shapeFor(40).cols).toBe(4);
   });
 });

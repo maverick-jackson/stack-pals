@@ -180,7 +180,7 @@ export class Pal {
     this.armL.style.transform = `translate(${x0 + 2}px, ${-Math.min(leftH, 6) * B * 0.55}px)`;
     this.armR.style.transform = `translate(${-x0 - 2}px, ${-Math.min(rightH, 6) * B * 0.55}px)`;
 
-    const leftTone = toneFor(s.tens > 0 ? 10 : n);
+    const leftTone = toneFor(s.cells[0].tone);
     const rightTone = toneFor(s.cells.find((c) => c.col === s.cols - 1)!.tone);
     this.mitts[0].setAttribute('fill', leftTone.fill);
     this.mitts[1].setAttribute('fill', rightTone.fill);
