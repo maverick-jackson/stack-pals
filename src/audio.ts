@@ -102,6 +102,24 @@ export function say(text: string, interrupt = true): void {
   synth.speak(u);
 }
 
+/** Speak and resolve when done (or after a sensible timeout, since onend is unreliable on some tablets). */
+export function sayAndWait(text: string): Promise<void> {
+  if (muted || !('speechSynthesis' in window)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) u.voice = voice;
+    u.lang = voice?.lang ?? 'en-US';
+    u.rate = 0.95;
+    u.pitch = 1.25;
+    const timer = window.setTimeout(resolve, 600 + text.length * 80);
+    u.onend = () => { clearTimeout(timer); resolve(); };
+    u.onerror = () => { clearTimeout(timer); resolve(); };
+    synth.speak(u);
+  });
+}
+
 export function hush(): void {
   window.speechSynthesis?.cancel();
 }

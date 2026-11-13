@@ -1,7 +1,6 @@
-import { Shape, shapeFor, seeded, toneFor } from './numbers';
+import { DEPTH, FLAT, Kind, Shape, shapeFor, seeded, toneFor } from './numbers';
 
 export const B = 100; // block size in character units
-export const GAP = 12; // space between columns so each ten reads as its own stick
 const INK = '#2b2140';
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -30,18 +29,11 @@ export function wobblyRect(x: number, y: number, w: number, h: number, rnd: () =
   ].join(' ');
 }
 
-function span(cols: number): number {
-  return cols * B + (cols - 1) * GAP;
-}
-
-interface BlockNode {
+interface PieceNode {
   g: SVGGElement;
   pop: SVGGElement;
-  fill: SVGPathElement;
-  shade: SVGPathElement;
   tone: number;
-  order: number;
-  col: number;
+  paint: (tone: number) => void;
 }
 
 export interface Bounds {
@@ -49,11 +41,35 @@ export interface Bounds {
   height: number;
 }
 
+const S = FLAT * B; // a hundred flat, and the face of a thousand cube
+const D = DEPTH * B;
+
+function gridLines(rnd: () => number): string {
+  const w = () => (rnd() - 0.5) * 3;
+  let d = '';
+  for (let i = 1; i < FLAT; i++) {
+    d += `M${i * B + w()} 6 L${i * B + w()} ${S - 6} `;
+    d += `M6 ${i * B + w()} L${S - 6} ${i * B + w()} `;
+  }
+  return d;
+}
+
+function obliqueLines(): { top: string; side: string } {
+  let top = '';
+  let side = '';
+  for (let i = 1; i < FLAT; i++) {
+    const f = i / FLAT;
+    top += `M${i * B} 0 L${i * B + D} ${-D} M${f * D} ${-f * D} L${S + f * D} ${-f * D} `;
+    side += `M${S + f * D} ${-f * D} L${S + f * D} ${S - f * D} M${S} ${i * B} L${S + D} ${i * B - D} `;
+  }
+  return { top, side };
+}
+
 export class Pal {
   readonly root: SVGGElement;
   private bob: SVGGElement;
-  private blocks = new Map<string, BlockNode>();
-  private blockLayer: SVGGElement;
+  private pieces = new Map<string, PieceNode>();
+  private layer: SVGGElement;
   private face: SVGGElement;
   private mouth: SVGPathElement;
   private armL: SVGGElement;
@@ -69,7 +85,7 @@ export class Pal {
     this.feet = el('g', { class: 'feet' }, this.bob);
     this.armL = this.makeArm(-1);
     this.armR = this.makeArm(1);
-    this.blockLayer = el('g', { class: 'blocks' }, this.bob);
+    this.layer = el('g', { class: 'blocks' }, this.bob);
     this.ghost = el('g', { class: 'ghost' }, this.bob);
     el('path', { d: wobblyRect(-B / 2, -B, B, B, seeded(99), 3), fill: '#ffffff', 'fill-opacity': 0.35, stroke: INK, 'stroke-width': 5, 'stroke-dasharray': '14 12', 'stroke-linecap': 'round' }, this.ghost);
     this.face = el('g', { class: 'face' }, this.bob);
@@ -92,71 +108,93 @@ export class Pal {
   }
 
   bounds(shape = this.shape): Bounds {
-    return { width: span(Math.max(1, shape.cols)), height: Math.max(1, shape.rows) * B };
+    return { width: shape.width * B, height: shape.height * B };
   }
 
-  /** Move to a new amount. Blocks that stay keep their place in the DOM and glide; new ones pop in. */
-  set(n: number, animate = true): { added: number; removed: number } {
+  /** Move to a new amount. Pieces that stay keep their place in the DOM and glide; new ones pop in. */
+  set(n: number, animate = true): void {
     const shape = shapeFor(n);
     this.shape = shape;
-    const x0 = -span(Math.max(1, shape.cols)) / 2;
+    const ox = (-shape.width * B) / 2;
     const seen = new Set<string>();
-    let added = 0;
     let delay = 0;
-    for (const cell of shape.cells) {
-      const key = `${cell.col}-${cell.row}`;
-      seen.add(key);
-      let node = this.blocks.get(key);
+    for (const p of shape.pieces) {
+      seen.add(p.key);
+      let node = this.pieces.get(p.key);
       if (!node) {
-        node = this.makeBlock(cell.col, cell.row);
-        this.blocks.set(key, node);
-        added++;
+        node = this.makePiece(p.key, p.kind);
+        this.pieces.set(p.key, node);
         if (animate) {
           node.pop.style.animationDelay = `${Math.min(delay, 400)}ms`;
           node.pop.classList.add('pop-in');
-          delay += 18;
+          delay += p.kind === 'block' ? 18 : 90;
         }
       }
-      node.order = cell.order;
-      node.col = cell.col;
-      if (node.tone !== cell.tone) {
-        const t = toneFor(cell.tone);
-        node.fill.setAttribute('fill', t.fill);
-        node.shade.setAttribute('fill', t.shade);
-        node.tone = cell.tone;
+      if (node.tone !== p.tone) {
+        node.paint(p.tone);
+        node.tone = p.tone;
       }
-      node.g.style.transform = `translate(${x0 + cell.col * (B + GAP)}px, ${-(cell.row + 1) * B}px)`;
+      const h = p.kind === 'block' ? 1 : FLAT;
+      node.g.style.transform = `translate(${ox + p.x * B}px, ${-(p.y + h) * B}px)`;
     }
-    let removed = 0;
-    for (const [key, node] of this.blocks) {
+    for (const [key, node] of this.pieces) {
       if (seen.has(key)) continue;
-      this.blocks.delete(key);
-      removed++;
+      this.pieces.delete(key);
       if (!animate) { node.g.remove(); continue; }
       node.pop.classList.remove('pop-in', 'lit');
       node.pop.classList.add('pop-out');
       setTimeout(() => node.g.remove(), 260);
     }
-    this.placeParts(n, x0);
-    return { added, removed };
+    this.placeParts(n, ox);
   }
 
-  private makeBlock(col: number, row: number): BlockNode {
-    const g = el('g', { class: 'blk' }, this.blockLayer);
-    const pop = el('g', { class: 'pop' }, g);
-    const rnd = seeded(col * 131 + row * 17 + 7);
-    const outline = wobblyRect(0, 0, B, B, rnd);
-    const fill = el('path', { d: outline, fill: '#ccc' }, pop);
-    const shade = el('path', { d: wobblyRect(9, B - 27, B - 18, 17, rnd, 1.5), fill: '#aaa' }, pop);
-    el('path', { d: `M16 ${20 + rnd() * 3} Q24 13 ${38 + rnd() * 6} ${14 + rnd() * 2}`, fill: 'none', stroke: '#fff', 'stroke-width': 6, 'stroke-linecap': 'round', opacity: 0.55 }, pop);
-    el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 5, 'stroke-linejoin': 'round' }, pop);
-    // Place before the first frame so a new block does not fly in from the origin.
+  private makePiece(key: string, kind: Kind): PieceNode {
+    const g = el('g', { class: 'blk' });
+    // Keep draw order stable: bigger places first, rows bottom to top.
+    this.layer.appendChild(g);
+    const pop = el('g', { class: kind === 'block' ? 'pop' : 'pop big' }, g);
+    let seed = 7;
+    for (const ch of key) seed = seed * 31 + ch.charCodeAt(0);
+    const rnd = seeded(seed);
+    const fills: SVGElement[] = [];
+    const shades: SVGElement[] = [];
+
+    if (kind === 'cube') {
+      const lines = obliqueLines();
+      const top = el('path', { d: `M0 0 L${S} 0 L${S + D} ${-D} L${D} ${-D}Z` }, pop);
+      fills.push(top);
+      el('path', { d: `M0 0 L${S} 0 L${S + D} ${-D} L${D} ${-D}Z`, fill: '#fff', opacity: 0.35 }, pop);
+      shades.push(el('path', { d: `M${S} 0 L${S + D} ${-D} L${S + D} ${S - D} L${S} ${S}Z` }, pop));
+      el('path', { d: lines.top + lines.side, fill: 'none', stroke: INK, 'stroke-width': 4, opacity: 0.35 }, pop);
+      el('path', { d: `M0 0 L${D} ${-D} L${S + D} ${-D} L${S + D} ${S - D} L${S} ${S} M${S} 0 L${S + D} ${-D}`, fill: 'none', stroke: INK, 'stroke-width': 9, 'stroke-linejoin': 'round' }, pop);
+    }
+
+    const size = kind === 'block' ? B : S;
+    const outline = wobblyRect(0, 0, size, size, rnd, kind === 'block' ? 2.5 : 6);
+    fills.push(el('path', { d: outline }, pop));
+    if (kind === 'block') {
+      shades.push(el('path', { d: wobblyRect(9, B - 27, B - 18, 17, rnd, 1.5) }, pop));
+      el('path', { d: `M16 ${20 + rnd() * 3} Q24 13 ${38 + rnd() * 6} ${14 + rnd() * 2}`, fill: 'none', stroke: '#fff', 'stroke-width': 6, 'stroke-linecap': 'round', opacity: 0.55 }, pop);
+      el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 5, 'stroke-linejoin': 'round' }, pop);
+    } else {
+      shades.push(el('path', { d: wobblyRect(30, S - 70, S - 60, 44, rnd, 4) }, pop));
+      el('path', { d: gridLines(rnd), fill: 'none', stroke: INK, 'stroke-width': 4, opacity: 0.35, 'stroke-linecap': 'round' }, pop);
+      el('path', { d: `M50 ${90 + rnd() * 10} Q110 40 ${240 + rnd() * 30} ${46 + rnd() * 6}`, fill: 'none', stroke: '#fff', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: 0.5 }, pop);
+      el('path', { d: outline, fill: 'none', stroke: INK, 'stroke-width': 9, 'stroke-linejoin': 'round' }, pop);
+    }
+
+    // Place before the first frame so a new piece does not fly in from the origin.
     g.style.transition = 'none';
     requestAnimationFrame(() => { g.style.transition = ''; });
-    return { g, pop, fill, shade, tone: 0, order: 0, col };
+    const paint = (tone: number) => {
+      const t = toneFor(tone);
+      for (const f of fills) f.setAttribute('fill', t.fill);
+      for (const sh of shades) sh.setAttribute('fill', t.shade);
+    };
+    return { g, pop, tone: 0, paint };
   }
 
-  private placeParts(n: number, x0: number): void {
+  private placeParts(n: number, ox: number): void {
     const s = this.shape;
     const zero = n === 0;
     this.ghost.style.display = zero ? '' : 'none';
@@ -164,36 +202,28 @@ export class Pal {
     this.armL.style.display = zero ? 'none' : '';
     this.armR.style.display = zero ? 'none' : '';
 
-    // Face sits on the top block, centred over the full tens when there are any.
-    const faceCols = s.tens > 0 ? s.tens : 1;
-    const topRow = zero ? 0 : (s.tens > 0 ? 9 : s.rows - 1);
-    const fx = x0 + span(faceCols) / 2;
-    const k = Math.min(1.9, 1 + 0.22 * (faceCols - 1));
-    const fy = -(topRow + 1) * B + 44 * k;
+    const k = s.face.scale;
+    const fx = ox + s.face.x * B;
+    const fy = -s.face.top * B + 44 * k;
     this.face.style.transform = `translate(${fx}px, ${fy}px) scale(${k})`;
     this.face.classList.toggle('sleepy', zero);
     this.mouth.setAttribute('d', zero ? 'M-12 30 Q0 26 12 30' : 'M-16 24 Q0 40 16 24');
-
     if (zero) return;
-    const leftH = s.tens > 0 ? 10 : s.rows;
-    const rightH = s.cells.filter((c) => c.col === s.cols - 1).length;
-    this.armL.style.transform = `translate(${x0 + 2}px, ${-Math.min(leftH, 6) * B * 0.55}px)`;
-    this.armR.style.transform = `translate(${-x0 - 2}px, ${-Math.min(rightH, 6) * B * 0.55}px)`;
 
-    const leftTone = toneFor(s.cells[0].tone);
-    const rightTone = toneFor(s.cells.find((c) => c.col === s.cols - 1)!.tone);
-    this.mitts[0].setAttribute('fill', leftTone.fill);
-    this.mitts[1].setAttribute('fill', rightTone.fill);
+    const L = s.limbs;
+    this.armL.style.transform = `translate(${ox + 2}px, ${-s.armL * B}px) scale(${L})`;
+    this.armR.style.transform = `translate(${ox + s.armRx * B - 2}px, ${-s.armR * B}px) scale(${L})`;
+    this.mitts[0].setAttribute('fill', toneFor(s.pieces[0].tone).fill);
+    this.mitts[1].setAttribute('fill', toneFor(s.pieces[s.pieces.length - 1].tone).fill);
     this.feet.replaceChildren();
-    const footXs = s.cols === 1 ? [x0 + 28, x0 + 72] : [x0 + 50, -x0 - 50];
-    for (const x of footXs) el('ellipse', { cx: x, cy: 8, rx: 30, ry: 14, fill: INK }, this.feet);
+    for (const x of s.feet) el('ellipse', { cx: ox + x * B, cy: 8 * L, rx: 30 * L, ry: 14 * L, fill: INK }, this.feet);
   }
 
-  /** Light one block (by count order) or a whole column of ten. */
-  light(order: number, wholeColumn = false): void {
-    for (const node of this.blocks.values()) {
-      const hit = wholeColumn ? node.col === order - 1 : node.order === order;
-      if (!hit) continue;
+  /** Make these pieces bounce and glow, for counting along. */
+  light(keys: string[]): void {
+    for (const key of keys) {
+      const node = this.pieces.get(key);
+      if (!node) continue;
       node.pop.classList.remove('pop-in', 'lit');
       void node.pop.getBoundingClientRect();
       node.pop.classList.add('lit');
@@ -201,7 +231,7 @@ export class Pal {
   }
 
   clearLights(): void {
-    for (const node of this.blocks.values()) node.pop.classList.remove('lit');
+    for (const node of this.pieces.values()) node.pop.classList.remove('lit');
   }
 
   jump(): void {

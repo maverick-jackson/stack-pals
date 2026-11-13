@@ -1,5 +1,5 @@
 export const MIN = 0;
-export const MAX = 100;
+export const MAX = 9999;
 
 const ONES = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
@@ -8,12 +8,23 @@ const ONES = [
 ];
 const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
 
-export function numberWord(n: number): string {
+function underHundred(n: number): string {
   if (n < 20) return ONES[n];
-  if (n === 100) return 'one hundred';
   const t = Math.floor(n / 10);
   const o = n % 10;
   return o ? `${TENS[t]}-${ONES[o]}` : TENS[t];
+}
+
+export function numberWord(n: number): string {
+  if (n === 0) return 'zero';
+  const parts: string[] = [];
+  const th = Math.floor(n / 1000);
+  const hu = Math.floor(n / 100) % 10;
+  const rest = n % 100;
+  if (th) parts.push(`${ONES[th]} thousand`);
+  if (hu) parts.push(`${ONES[hu]} hundred`);
+  if (rest) parts.push(underHundred(rest));
+  return parts.join(' ');
 }
 
 export function clamp(n: number): number {
@@ -25,8 +36,8 @@ export interface Tone {
   shade: string;
 }
 
-// Our own palette: one tone per amount from 1 to 10, then one per decade for the full tens,
-// so 20, 30 and 40 each look different. 100 wears every decade color at once.
+// Our own palette: one tone per amount from 1 to 10 (towers and the ones), then one per digit
+// for the bigger places (10 amber, 20 red, 30 purple...), shared by tens, hundreds and thousands.
 const TONES: Record<number, Tone> = {
   1: { fill: '#ff8a5b', shade: '#e0663a' },
   2: { fill: '#4cc9f0', shade: '#2a9fd0' },
@@ -46,50 +57,153 @@ const TONES: Record<number, Tone> = {
   70: { fill: '#ff4fa3', shade: '#d93583' },
   80: { fill: '#9e9a2e', shade: '#7c781d' },
   90: { fill: '#adb5bd', shade: '#8a939c' },
-  100: { fill: '#fff1a8', shade: '#e3cf6e' },
 };
 
 export function toneFor(amount: number): Tone {
   return TONES[amount];
 }
 
-export interface Cell {
-  col: number;
-  /** 0 is the bottom row */
-  row: number;
-  /** palette key: 1 to 10 for a tower or the ones, 10 to 90 by tens for full ten columns */
+export type Kind = 'block' | 'flat' | 'cube';
+
+/** One drawn piece. Units are blocks; x from the left edge, y from the ground up. */
+export interface Piece {
+  key: string;
+  kind: Kind;
+  x: number;
+  y: number;
+  /** palette key: 1 to 10 for a tower or the ones, 10 to 90 for tens, hundreds and thousands */
   tone: number;
-  /** 1-based count order: tens first, bottom to top, then the ones */
-  order: number;
+}
+
+export interface Face {
+  /** centre of the face, in blocks from the left edge */
+  x: number;
+  /** top of the piece the face sits on, in blocks from the ground */
+  top: number;
+  scale: number;
 }
 
 export interface Shape {
-  cols: number;
-  rows: number;
-  /** columns that are a full ten */
-  tens: number;
-  cells: Cell[];
+  pieces: Piece[];
+  width: number;
+  height: number;
+  face: Face;
+  /** arm heights (blocks from the ground) at the left and right edges */
+  armL: number;
+  armR: number;
+  /** right edge the right arm hangs from */
+  armRx: number;
+  feet: [number, number];
+  /** size of the arms and feet */
+  limbs: number;
+}
+
+export const GAP = 0.12; // between columns, so each ten reads as its own stick
+export const GROUP_GAP = 0.7; // between thousands, hundreds, tens and ones
+export const DEPTH = 4; // how far a thousand cube recedes
+export const FLAT = 10; // a hundred is 10 by 10 blocks
+const PER_ROW = 3;
+
+function digitTone(d: number): number {
+  return d * 10;
 }
 
 /**
- * Up to ten: one tower. Past ten: a full column per ten, plus a shorter column for the ones,
- * so the shape itself shows place value.
+ * Up to ten: one tower. Past ten the buddy is built the way place value is taught:
+ * thousand cubes, then hundred flats, then a column per ten, then the ones.
+ * Each place uses one color per digit, so 20, 30, 200 and 3000 all look different.
  */
 export function shapeFor(n: number): Shape {
-  const cells: Cell[] = [];
+  const pieces: Piece[] = [];
   if (n <= 10) {
-    for (let r = 0; r < n; r++) cells.push({ col: 0, row: r, tone: n, order: r + 1 });
-    return { cols: n > 0 ? 1 : 0, rows: n, tens: n === 10 ? 1 : 0, cells };
+    for (let r = 0; r < n; r++) pieces.push({ key: `b0-${r}`, kind: 'block', x: 0, y: r, tone: n });
+    const h = Math.max(1, n);
+    return {
+      pieces, width: 1, height: h,
+      face: { x: 0.5, top: h, scale: 1 },
+      armL: Math.min(h, 6) * 0.55, armR: Math.min(h, 6) * 0.55, armRx: 1,
+      feet: [0.28, 0.72], limbs: 1,
+    };
   }
-  const tens = Math.floor(n / 10);
-  const ones = n % 10;
-  let order = 1;
-  for (let c = 0; c < tens; c++) {
-    const tone = n === 100 ? (c + 1) * 10 : tens * 10;
-    for (let r = 0; r < 10; r++) cells.push({ col: c, row: r, tone, order: order++ });
+
+  const th = Math.floor(n / 1000);
+  const hu = Math.floor(n / 100) % 10;
+  const te = Math.floor(n / 10) % 10;
+  const on = n % 10;
+  let x = 0;
+  let height = 0;
+  let face: Face | null = null;
+  let armL = 0;
+  let armR = 0;
+  let armRx = 0;
+  let rightFoot = 0;
+  let width = 0;
+
+  const grid = (count: number, kind: 'flat' | 'cube', prefix: string, digit: number) => {
+    const rows = Math.ceil(count / PER_ROW);
+    for (let i = 0; i < count; i++) {
+      pieces.push({ key: `${prefix}${i}`, kind, x: x + (i % PER_ROW) * (FLAT + GAP), y: Math.floor(i / PER_ROW) * FLAT, tone: digitTone(digit) });
+    }
+    const depth = kind === 'cube' ? DEPTH : 0;
+    const cols = Math.min(count, PER_ROW);
+    const w = cols * (FLAT + GAP) - GAP;
+    const topRow = rows - 1;
+    const inTop = count - topRow * PER_ROW;
+    if (!face) {
+      face = { x: x + (inTop * (FLAT + GAP) - GAP) / 2, top: rows * FLAT, scale: kind === 'cube' ? 6 : 5 };
+      armL = Math.min(rows * FLAT, 30) * 0.5;
+    }
+    height = Math.max(height, rows * FLAT + depth);
+    const lastColRows = Math.ceil((count - (cols - 1)) / PER_ROW);
+    armR = lastColRows * FLAT * 0.5;
+    armRx = x + w + depth * 0.5;
+    rightFoot = x + w - FLAT / 2;
+    width = x + w + depth;
+    x = width + GROUP_GAP;
+  };
+
+  if (th) grid(th, 'cube', 'c', th);
+  if (hu) grid(hu, 'flat', 'f', hu);
+
+  // Tens and ones keep the same keys as before, so blocks glide instead of popping.
+  for (let c = 0; c < te; c++) {
+    for (let r = 0; r < 10; r++) pieces.push({ key: `b${c}-${r}`, kind: 'block', x: x + c * (1 + GAP), y: r, tone: digitTone(te) });
   }
-  for (let r = 0; r < ones; r++) cells.push({ col: tens, row: r, tone: ones, order: order++ });
-  return { cols: tens + (ones ? 1 : 0), rows: 10, tens, cells };
+  if (te) {
+    const w = te * (1 + GAP) - GAP;
+    if (!face) {
+      face = { x: x + w / 2, top: 10, scale: Math.min(1.9, 1 + 0.22 * (te - 1)) };
+      armL = 6 * 0.55;
+    }
+    height = Math.max(height, 10);
+    armR = 6 * 0.55;
+    armRx = x + w;
+    rightFoot = x + w - 0.5;
+    width = x + w;
+    x = width + GAP;
+  }
+  if (on) {
+    const col = te; // ones stand in the next block column
+    for (let r = 0; r < on; r++) pieces.push({ key: `b${col}-${r}`, kind: 'block', x, y: r, tone: on });
+    if (!face) {
+      face = { x: x + 0.5, top: on, scale: 1 };
+      armL = Math.min(on, 6) * 0.55;
+    }
+    height = Math.max(height, on);
+    armR = Math.min(on, 6) * 0.55;
+    armRx = x + 1;
+    rightFoot = x + 0.5;
+    width = x + 1;
+  }
+  const first = pieces[0];
+  const leftFoot = first.kind === 'block' ? 0.5 : FLAT / 2;
+  const limbs = Math.min(5, Math.max(1, height / 7));
+  return {
+    pieces, width, height,
+    face: face!,
+    armL, armR, armRx,
+    feet: [leftFoot, rightFoot], limbs,
+  };
 }
 
 /** Deterministic PRNG so a block keeps the same wobble every time it is drawn. */

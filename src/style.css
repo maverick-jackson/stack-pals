@@ -59,7 +59,8 @@ html, body {
 @keyframes bump { 0% { transform: scale(0.8); } 100% { transform: scale(1); } }
 .word {
   margin-top: 2px;
-  font-size: clamp(20px, 4vh, 34px);
+  font-size: clamp(18px, 4vh, 34px);
+  padding: 0 90px;
   color: var(--ink);
   letter-spacing: 0.5px;
 }
@@ -67,14 +68,16 @@ html, body {
 /* Character stage */
 .stage-wrap {
   position: absolute;
-  left: 0;
-  right: 0;
+  /* clear the + and - buttons on the left, and balance it on the right */
+  left: calc(max(16px, env(safe-area-inset-left)) + clamp(64px, 11vh, 88px) + 12px);
+  right: calc(max(16px, env(safe-area-inset-left)) + clamp(64px, 11vh, 88px) + 12px);
   top: calc(max(10px, env(safe-area-inset-top)) + clamp(100px, 21vh, 190px));
   bottom: max(4vh, env(safe-area-inset-bottom));
   transition: right 0.35s ease;
 }
 .stage { display: block; width: 100%; height: 100%; overflow: visible; }
-body.panel-open .stage-wrap, body.panel-open .hud { right: var(--panel-w); }
+body.panel-open .hud { right: var(--panel-w); }
+body.panel-open .stage-wrap { right: calc(var(--panel-w) + 12px); }
 .stage .pal { cursor: pointer; }
 .blk { transition: transform 0.4s var(--ease-spring); }
 .face, .arm { transition: transform 0.4s var(--ease-spring); }
@@ -84,6 +87,12 @@ body.panel-open .stage-wrap, body.panel-open .hud { right: var(--panel-w); }
 @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes popOut { to { transform: scale(0); opacity: 0; } }
 .lit { animation: lit 0.45s var(--ease-spring); }
+.pop.big.lit { animation-name: litBig; }
+@keyframes litBig {
+  0% { transform: scale(1); filter: brightness(1); }
+  40% { transform: scale(1.05); filter: brightness(1.2); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
 @keyframes lit {
   0% { transform: scale(1); filter: brightness(1); }
   40% { transform: scale(1.18); filter: brightness(1.25); }
@@ -192,6 +201,8 @@ body.panel-open .panel { transform: none; }
 .pill:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
 .pill.t1 { background: #ff8a5b; }
 .pill.t10 { background: #ffb703; }
+.pill.t100 { background: #4cc9f0; }
+.pill.t1000 { background: #b388eb; }
 .pill.act { font-size: 22px; }
 .pill.count { background: #7ae582; }
 .pill.count.on { background: #ffe27a; }

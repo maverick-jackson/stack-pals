@@ -1,7 +1,7 @@
 import './style.css';
 import { B, Pal } from './character';
 import { clamp, MAX, numberWord } from './numbers';
-import { hush, isMuted, say, setMuted, sfx, unlockAudio } from './audio';
+import { hush, isMuted, say, sayAndWait, setMuted, sfx, unlockAudio } from './audio';
 import { countSteps } from './count';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -72,7 +72,7 @@ let sayTimer = 0;
 function render(animate: boolean) {
   pal.set(n, animate);
   frame(animate);
-  numEl.textContent = String(n);
+  numEl.textContent = n.toLocaleString('en-US');
   wordEl.textContent = numberWord(n);
   slider.value = String(n);
   live.textContent = `${n}, ${numberWord(n)}`;
@@ -123,10 +123,9 @@ async function runCount() {
   let i = 0;
   for (const s of countSteps(n)) {
     if (counting !== id) return;
-    pal.light(s.target, s.column);
+    pal.light(s.keys);
     sfx.count(i++);
-    say(s.word);
-    await new Promise((r) => setTimeout(r, s.column ? 900 : 700));
+    await Promise.all([sayAndWait(s.word), new Promise((r) => setTimeout(r, s.keys.length > 1 ? 850 : 650))]);
   }
   if (counting !== id) return;
   counting = 0;
@@ -178,8 +177,13 @@ countBtn.addEventListener('click', () => void runCount());
 $('sayBtn').addEventListener('click', () => { pal.jump(); say(numberWord(n)); });
 $('resetBtn').addEventListener('click', () => setN(1));
 $('surpriseBtn').addEventListener('click', () => {
+  // Pick how many digits first, so small numbers come up as often as big ones.
   let next = n;
-  while (next === n) next = 1 + Math.floor(Math.random() * MAX);
+  while (next === n) {
+    const digits = 1 + Math.floor(Math.random() * String(MAX).length);
+    const lo = digits === 1 ? 1 : 10 ** (digits - 1);
+    next = Math.min(MAX, lo + Math.floor(Math.random() * (10 ** digits - lo)));
+  }
   setN(next, { speak: false });
   sfx.tada();
   window.setTimeout(() => { pal.jump(); say(numberWord(n)); }, 450);
