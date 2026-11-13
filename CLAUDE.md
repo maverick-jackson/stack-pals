@@ -10,3 +10,4 @@ numberblocks-tablet build for a friend's kids; possible future PNL-Learn kids se
 - Deploy: push to main; GitHub Actions builds and publishes to Pages.
 - Big numbers use place-value pieces (thousand cube, hundred flat, ten column, ones), never thousands of single blocks: tablets cannot draw that many nodes.
 - Every place is colored by its digit with one shared palette (10 amber, 20 red, 30 purple...), per Edgar's ask that 20 and 30 look different.
+- Updates: page is network first, assets cache first; index.html has an inline self-heal that wipes the SW cache and reloads if an asset 404s (stale page from an old release). Keep it inline.

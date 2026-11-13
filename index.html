@@ -13,6 +13,24 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <title>Stack Pals</title>
+    <script>
+      // Self-heal: if a cached page asks for files from an older release, wipe the offline cache
+      // and load the current release once. Must stay inline and run before any asset loads.
+      (function () {
+        var KEY = 'sp-heal';
+        window.addEventListener('error', function (e) {
+          var t = e.target;
+          if (!t || (t.tagName !== 'SCRIPT' && t.tagName !== 'LINK')) return;
+          // at most once a minute, so a real outage can never cause a reload loop
+          try { if (Date.now() - Number(localStorage.getItem(KEY) || 0) < 60000) return; localStorage.setItem(KEY, String(Date.now())); } catch (_) { return; }
+          var go = function () { location.replace(location.pathname + '?fresh=' + Date.now()); };
+          var jobs = [];
+          if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+          if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+          Promise.all(jobs).then(go, go);
+        }, true);
+      })();
+    </script>
   </head>
   <body>
     <main id="app">

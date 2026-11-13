@@ -34,17 +34,24 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// The page itself is network first, so a new release shows up on the next open.
+// Hashed assets never change, so they are cache first. Offline falls back to the cache.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((hit) => {
-      if (hit) return hit;
-      if (e.request.mode === 'navigate') return caches.match('./').then((r) => r || fetch(e.request));
-      return fetch(e.request);
-    }),
-  );
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-store' })
+        .then((res) => {
+          if (res.ok) caches.open(CACHE).then((c) => c.put('./', res.clone()));
+          return res;
+        })
+        .catch(() => caches.match('./')),
+    );
+    return;
+  }
+  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request)));
 });
 `;
 writeFileSync(join(dist, 'sw.js'), sw);

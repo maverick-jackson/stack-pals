@@ -242,5 +242,18 @@ window.addEventListener('pointerdown', unlockAudio, { capture: true });
 render(false);
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => { void navigator.serviceWorker.register('./sw.js'); });
+  // When a new release takes over, reload once so nobody is stuck on the old one.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
+  window.addEventListener('load', async () => {
+    const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void reg.update();
+    });
+  });
 }
